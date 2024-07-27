@@ -53,7 +53,7 @@ class MsgHandler:
             return
         if fader_value is None:
             return
-
+        executor_id += 1 # sync id with named id
         normalized_position = float(fader_value)
 
         executor = [executor_id, normalized_position, executor_is_active]
@@ -79,10 +79,10 @@ class MsgHandler:
             return None
         payload = {
             "requestType": "playbacks",
-            "startIndex": [20, 120, 220],
-            "itemsCount": [2, 2, 2],
+            "startIndex": [0],
+            "itemsCount": [8],
             "pageIndex": 0,
-            "itemsType": [2, 3, 3],
+            "itemsType": [2],
             "view": 2,
             "execButtonViewMode": 1,
             "buttonsViewMode": 0,
