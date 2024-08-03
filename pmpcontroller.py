@@ -1,7 +1,6 @@
 import rtmidi
 from typing import Callable, Dict, List, Tuple
 from enum import Enum, auto
-import asyncio
 
 PORT_NAME = "Platform M+"
 NOTE_ON = 0x90
@@ -10,7 +9,8 @@ PITCH_BEND = 0xE0
 VELOCITY_ON = 127
 VELOCITY_OFF = 0
 MAX_7BIT = 0x7F
-MAX_14BIT = 16383
+# MAX_14BIT = 16383
+MAX_DEVICE_VALUE = 14896 # The device sends a max value of 14896 for some reason
 
 class PMPEvent(Enum):
     """
@@ -68,7 +68,7 @@ class PMPController:
                 return i
         return None
 
-    async def process_midi_message(self, message, timestanp):
+    def process_midi_message(self, message, timestanp):
         midi_message, _ = message
         if len(midi_message) != 3:
             return
@@ -82,20 +82,20 @@ class PMPController:
         elif status_byte == CONTROL_CHANGE:
             self.handle_encoder(data1, data2)
 
-    async def handle_fader(self, fader_number: int, value: int):
+    def handle_fader(self, fader_number: int, value: int):
         if 0 <= fader_number < 9:
-            normalized_value = value / MAX_14BIT
+            normalized_value = value / MAX_DEVICE_VALUE
             if self.sync_faders:
                 self.set_fader(fader_number, normalized_value)
             for callback in self.event_callbacks[PMPEvent.FADER]:
                 callback(fader_number, normalized_value)
 
-    async def handle_button(self, button_number: int, is_pressed: bool):
+    def handle_button(self, button_number: int, is_pressed: bool):
         button_state = self.button_states.get(button_number, False)
         for callback in self.event_callbacks[PMPEvent.BUTTON]:
             callback(button_number, is_pressed, button_state)
 
-    async def handle_encoder(self, encoder_number: int, value: int):
+    def handle_encoder(self, encoder_number: int, value: int):
         for callback in self.event_callbacks[PMPEvent.ENCODER]:
             callback(encoder_number, value)
 
@@ -108,7 +108,7 @@ class PMPController:
             `normalized_position (float)`: The position of the fader, between 0 and 1.
         """
         if 0 <= fader_number < 9:
-            value = int(normalized_position * MAX_14BIT)
+            value = int(normalized_position * MAX_DEVICE_VALUE)
             msb = (value >> 7) & MAX_7BIT
             lsb = value & MAX_7BIT
             self.midi_out.send_message([PITCH_BEND + fader_number, lsb, msb])

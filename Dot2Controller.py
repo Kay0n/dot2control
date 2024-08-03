@@ -70,7 +70,6 @@ class Dot2Controller:
         if not self.connection.is_connected():
             raise RuntimeError("Not connected to dot2")
         command = f"Executor {executor_number} At {normalized_position * 100}"
-        print(command)
         await self.send_command(command)
 
 

@@ -7,10 +7,6 @@ from typing import Optional, Dict, Any, Callable, List
 
 
 class MsgHandler:
-    def __init__(self):
-        self.event_listeners = []
-
-
 
     async def proccess_messages(self, messages, is_connected) -> list:
         if not is_connected:

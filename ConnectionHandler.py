@@ -6,9 +6,6 @@ from typing import Optional, Dict, Any, Callable, List
 
 
 
-
-
-
 class ConnectionHandler:
     def __init__(self):
         self.session: Optional[aiohttp.ClientSession] = None
