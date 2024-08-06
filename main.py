@@ -4,34 +4,34 @@ from pmpcontrol import PMPController, PMPEvent
 from Dot2Controller import Dot2Controller
 
 dot2 = Dot2Controller()
-platformM = PMPController()
+# platformM = PMPController()
 queue = asyncio.Queue()
 
 
 
-def dot2_fader_changed(executor_number: int, normalized_value: float, is_active: bool):
+def dot2_fader_changed(executor_number: int, is_active: bool, normalized_value: float):
     mapped_num = 8 - executor_number
     print(f"SETTING PLATFORM({mapped_num}, {normalized_value:.3f})")
-    platformM.set_fader(mapped_num, normalized_value)
-    platformM.set_button(mapped_num + 8, is_active)
+    # platformM.set_fader(mapped_num, normalized_value)
+    # platformM.set_button(mapped_num + 8, is_active)
         
 
 
-def pmp_platform_changed(fader_number: int, normalized_value: float):
-    mapped_num = 8 - fader_number
+# def pmp_platform_changed(fader_number: int, normalized_value: float):
+#     mapped_num = 8 - fader_number
    
-    queue.put_nowait([mapped_num, normalized_value])
-    platformM.set_fader(fader_number, normalized_value)
+#     queue.put_nowait([mapped_num, normalized_value])
+#     platformM.set_fader(fader_number, normalized_value)
 
 
 
 async def main():
 
     dot2.add_fader_event_listener(dot2_fader_changed)
-    platformM.add_event_listener(PMPEvent.FADER, pmp_platform_changed)
+    # platformM.add_event_listener(PMPEvent.FADER, pmp_platform_changed)
 
-    platformM.connect()
-    await dot2.connect("127.0.0.1", "password", 0.08)
+    # platformM.connect()
+    await dot2.connect("127.0.0.1", "test", 0.08)
 
     try:
         while True:
@@ -43,9 +43,26 @@ async def main():
                 await dot2.set_fader(mapped_num, normalized_value)
     finally:
         await dot2.disconnect()
-        platformM.reset()
-        platformM.disconnect()
+        # platformM.reset()
+        # platformM.disconnect()
         print("disconnected")
 
+async def test():
+    dot2.add_fader_event_listener(dot2_fader_changed)
+    try:
+        await dot2.connect("127.0.0.1", "test")
+    except Exception as e:
+        print(e)
+    try:
+        while True:
+            await asyncio.sleep(3)
+            await dot2.set_fader(1,1)
+    finally:
+        await dot2.disconnect()
+
+        print("disconnected")
+
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(test())
