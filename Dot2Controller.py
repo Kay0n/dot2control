@@ -240,12 +240,14 @@ class Dot2Controller:
 
 
     async def set_fader(self, executor_number: int, normalized_position: float):
+        if not self.connected: raise ConnectionError("Not connected to a Dot2 instance")
         if executor_number < 1: raise ValueError("Executor must be positive")
         command = f"Executor {executor_number} At {normalized_position * 100}"
         await self.send_command(command)
         
 
     async def set_button(self, executor_number: int, is_active: bool):
+        if not self.connected: raise ConnectionError("Not connected to a Dot2 instance")
         if executor_number < 1: raise ValueError("Executor must be positive")
         command = f"Executor {executor_number} At {100 if is_active else 0}"
         await self.send_command(command)
