@@ -4,12 +4,21 @@ import json
 import hashlib
 from enum import IntEnum
 from typing import Optional, Dict, Any, Callable, List
+import dataclasses
 
 
 
 class ExecutorType(IntEnum):
     BUTTON = 3
     FADER = 2
+
+
+
+@dataclasses.dataclass
+class ExecutorGroup:
+    start_index: int
+    count: int
+    executor_type: ExecutorType
 
 
 
@@ -214,22 +223,17 @@ class Dot2Controller:
             return
         payload = {
             "requestType": "playbacks",
-            "startIndex": [0,100,200],
-            "itemsCount": [13,13,13],
+            "startIndex": self.executor_config.get("startIndex", []),
+            "itemsCount": self.executor_config.get("itemsCount", []),
             "pageIndex": 0,     
-            "itemsType": [
-                ExecutorType.FADER, 
-                ExecutorType.BUTTON, 
-                ExecutorType.BUTTON
-            ],      
+            "itemsType": self.executor_config.get("itemsType", []),
             "view": 2,                  # fader view
-            "execButtonViewMode": 1,    # non-extended, 2?
+            "execButtonViewMode": 1,    
             "buttonsViewMode": 0,
             "session": self.session_id,
             "maxRequests": 1
         }
         await self.send(payload)
-    
 
     async def send_command(self, command: str):
         await self.send({
@@ -264,8 +268,19 @@ class Dot2Controller:
     def remove_fader_event_listener(self, callback: Callable):
         self.fader_event_listeners.remove(callback)
     
+
     def remove_button_event_listener(self, callback: Callable):
         self.button_event_listeners.remove(callback)
 
 
+    def set_executor_groups(self, configs: List[ExecutorGroup]):
+        self.executor_config = {
+            "startIndex": [],
+            "itemsCount": [],
+            "itemsType": []
+        }
+        for config in configs:
+            self.executor_config["startIndex"].append(config.start_index - 1)
+            self.executor_config["itemsCount"].append(config.count)
+            self.executor_config["itemsType"].append(config.executor_type)
     

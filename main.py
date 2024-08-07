@@ -1,12 +1,17 @@
 import asyncio
 import aiohttp
 from pmpcontrol import PMPController, PMPEvent
-from Dot2Controller import Dot2Controller
+from Dot2Controller import Dot2Controller, ExecutorType, ExecutorGroup
 
 dot2 = Dot2Controller()
 platformM = PMPController()
 queue = asyncio.Queue()
 
+dot2.set_executor_groups([
+    ExecutorGroup(1, 8, ExecutorType.FADER),
+    ExecutorGroup(101, 8, ExecutorType.BUTTON),
+    ExecutorGroup(201, 8, ExecutorType.BUTTON)
+])
 
 
 def dot2_fader_changed(executor_number: int, is_active: bool, normalized_value: float):
