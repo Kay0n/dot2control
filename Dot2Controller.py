@@ -32,6 +32,7 @@ class Dot2Controller:
         self.button_event_listeners: List[Callable] = []
         self.button_states = {}
         self.fader_states = {}
+        self.executor_config = {}
         self.client_session: Optional[aiohttp.ClientSession] = None
         self.ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self.session_id: Optional[str] = None
@@ -283,4 +284,4 @@ class Dot2Controller:
             self.executor_config["startIndex"].append(config.start_index - 1)
             self.executor_config["itemsCount"].append(config.count)
             self.executor_config["itemsType"].append(config.executor_type)
-    
+
