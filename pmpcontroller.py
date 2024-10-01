@@ -1,6 +1,7 @@
 import rtmidi
 from typing import Callable, Dict, List, Tuple
 from enum import Enum, auto
+import time
 
 PORT_NAME = "Platform M+"
 NOTE_ON = 0x90
@@ -32,6 +33,7 @@ class PMPController:
         Args:
             `sync_faders (bool, optional)`: Whether the fader positions should sync with user movement. Defaults to False.
         """
+        self.connected = False
         self.sync_faders = sync_faders
         self.midi_in = rtmidi.MidiIn()
         self.midi_out = rtmidi.MidiOut()
@@ -53,25 +55,26 @@ class PMPController:
         Raises:
             `OSError`: If the Platform M+ device is not found.
         """
-        in_port = self.find_port(self.midi_in)
-        out_port = self.find_port(self.midi_out)
+        in_port = self.__find_port(self.midi_in)
+        out_port = self.__find_port(self.midi_out)
         if in_port is None or out_port is None:
-            raise OSError("Platform M+ not found. Make sure it's connected and recognized by your system.")
+            raise OSError("Platform M+ not found")
         self.midi_in.open_port(in_port)
         self.midi_out.open_port(out_port)
-        self.midi_in.set_callback(self.process_midi_message)
+        self.midi_in.set_callback(self.__process_midi_message)
+        self.connected = True
         return (in_port, out_port)
 
-    def find_port(self, midi_obj) -> int:
+    def __find_port(self, midi_obj) -> int:
         for i, port in enumerate(midi_obj.get_ports()):
             if PORT_NAME in port:
                 return i
         return None
     
-    def is_connected() -> bool:
-        pass
+    def is_connected(self) -> bool:
+        return self.connected
 
-    def process_midi_message(self, message, timestanp):
+    def __process_midi_message(self, message, timestanp):
         midi_message, _ = message
         if len(midi_message) != 3:
             return
@@ -79,13 +82,13 @@ class PMPController:
         if PITCH_BEND <= status_byte <= PITCH_BEND + 8:
             fader_number = status_byte - PITCH_BEND
             value = (data2 << 7) | data1
-            self.handle_fader(fader_number, value)
+            self.__handle_fader(fader_number, value)
         elif status_byte == NOTE_ON:
-            self.handle_button(data1, data2 > 0)
+            self.__handle_button(data1, data2 > 0)
         elif status_byte == CONTROL_CHANGE:
-            self.handle_encoder(data1, data2)
+            self.__handle_encoder(data1, data2)
 
-    def handle_fader(self, fader_number: int, value: int):
+    def __handle_fader(self, fader_number: int, value: int):
         if 0 <= fader_number < 9:
             normalized_value = value / MAX_DEVICE_VALUE
             if self.sync_faders:
@@ -93,12 +96,12 @@ class PMPController:
             for callback in self.event_callbacks[PMPEvent.FADER]:
                 callback(fader_number, normalized_value)
 
-    def handle_button(self, button_number: int, is_pressed: bool):
+    def __handle_button(self, button_number: int, is_pressed: bool):
         button_state = self.button_states.get(button_number, False)
         for callback in self.event_callbacks[PMPEvent.BUTTON]:
             callback(button_number, is_pressed, button_state)
 
-    def handle_encoder(self, encoder_number: int, value: int):
+    def __handle_encoder(self, encoder_number: int, value: int):
         for callback in self.event_callbacks[PMPEvent.ENCODER]:
             callback(encoder_number, value)
 
@@ -114,7 +117,11 @@ class PMPController:
             value = int(normalized_position * MAX_DEVICE_VALUE)
             msb = (value >> 7) & MAX_7BIT
             lsb = value & MAX_7BIT
-            self.midi_out.send_message([PITCH_BEND + fader_number, lsb, msb])
+            try:
+                self.midi_out.send_message([PITCH_BEND + fader_number, lsb, msb])
+            except rtmidi.SystemError:
+                self.connected = False
+                raise OSError("Not connected to Platform M+")
             self.fader_positions[fader_number] = normalized_position
 
     def set_button(self, button_number: int, button_state: bool):
@@ -127,8 +134,12 @@ class PMPController:
         """
         self.button_states[button_number] = button_state
         velocity = VELOCITY_ON if button_state else VELOCITY_OFF
-        self.midi_out.send_message([NOTE_ON, button_number, velocity])
-
+        try:
+            self.midi_out.send_message([NOTE_ON, button_number, velocity])
+        except rtmidi.SystemError:
+            self.connected = False
+            raise OSError("Not connected to Platform M+")
+        
     def set_fader_sync(self, sync_faders: bool):
         """
         Set whether faders should sync with user movement.
@@ -164,6 +175,7 @@ class PMPController:
         self.button_states[button_number] = button_state
         return button_state
 
+    # raises OSError
     def reset(self):
         """
         Reset all faders to 0 and all buttons to off.
@@ -202,6 +214,8 @@ class PMPController:
         """
         Disconnect from the Platform M+ device and close MIDI ports.
         """
+        self.connected = False
+        time.sleep(0.01)
         self.midi_in.cancel_callback()
         self.midi_in.close_port()
         self.midi_out.close_port()
