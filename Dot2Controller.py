@@ -37,7 +37,7 @@ class Dot2Controller:
         self.ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self.session_id: Optional[str] = None
         self.keep_alive_interval = 15  # seconds
-        self.timeout = 10  # 10 seconds timeout
+        self.timeout_seconds = 10  # 10 seconds timeout
 
    
     async def connect(self, address: str, password: str) -> bool:
@@ -45,8 +45,9 @@ class Dot2Controller:
         self._password = hashlib.md5(password.encode()).hexdigest()
         try:
             await self.__connect()
-        except Exception as e:
-            raise(f"Connection error: {e}")
+        except OSError:
+            raise OSError(f"Could not connect to dot2 on '{address}' ") from None
+        
         
 
     async def __connect(self):
@@ -56,12 +57,13 @@ class Dot2Controller:
         self.client_session = aiohttp.ClientSession()
         self.ws = await self.client_session.ws_connect(f"ws://{self.address}/?ma=1")
         self.tasks.append(asyncio.create_task(self.__task_wrapper(self.__process_messages)))
+
         await self.__wait_for_connection()
         self.tasks.append(asyncio.create_task(self.__task_wrapper(self.__keep_alive)))
         
 
     async def __wait_for_connection(self) -> None:
-        for _ in range(self.timeout * 10): 
+        for _ in range(self.timeout_seconds * 10): 
             if self.connected:
                 return
             await asyncio.sleep(0.1)
@@ -77,7 +79,7 @@ class Dot2Controller:
             "password": self._password,
             "session": self.session_id,
         }
-        await self.send(payload)
+        await self.__send(payload)
 
 
     async def disconnect(self):
@@ -85,7 +87,7 @@ class Dot2Controller:
             if task: task.cancel()
           
         if self.session_id:
-            await self.send({"requestType": "close", "session": self.session_id})
+            await self.__send({"requestType": "close", "session": self.session_id})
         
         if self.ws and not self.ws.closed:
             await self.ws.close()
@@ -93,14 +95,15 @@ class Dot2Controller:
         if self.client_session and not self.client_session.closed:
             await self.client_session.close()
 
-        self.session_id = None
         self.connected = False
+        self.session_id = None
         self.client_session = None
         self.ws = None
         self.button_states.clear()
         self.fader_states.clear()
         
-
+    def is_connected(self) -> bool:
+        return self.connected
 
     async def __task_wrapper(self, callable: Callable):
         try:
@@ -114,53 +117,54 @@ class Dot2Controller:
         await asyncio.sleep(self.keep_alive_interval)
         if self.connected and self.ws and not self.ws.closed:
             try:
-                await self.send({"session": self.session_id})
+                await self.__send({"session": self.session_id})
             except Exception as e:
                 print(f"Keep-alive error: {e}")
                 print("Attempting to reconnect...")
                 self.connected = False
                 await self.__connect()
+                raise e
         
 
 
     async def __process_messages(self):
-        try:
-            async for message in self.ws:          
-                if message.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
-                    print(f"WebSocket closed or error: {message.data}")
-                    break
+        while True:
+            message = await self.ws.receive_message()
 
-                if message.type != aiohttp.WSMsgType.TEXT:
-                    print(f"Unexpected message type: {message.type}")
-                    continue
+            if message is None:
+                print("Received None, disconnecting...")
+                break
+    
+            if message.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                print(f"WebSocket closed or error: {message.data}")
+                break
 
-                data = json.loads(message.data)
-                
-                if data.get("responseType") == "login":
-                    if data.get("result"):
-                        self.connected = True
-                        await self.__request_playbacks()
-                    else:
-                        print("Login failed")
-                        break
+            if message.type != aiohttp.WSMsgType.TEXT:
+                print(f"Unexpected message type: {message.type}")
+                continue
 
-                if data.get("responseType") == "playbacks":
-                    await self.__process_playback(data)
+            data = json.loads(message.data)
+            
+            if data.get("responseType") == "login":
+                if data.get("result"):
+                    self.connected = True
                     await self.__request_playbacks()
+                else:
+                    break
+                    
+            if data.get("responseType") == "playbacks":
+                await self.__process_playback(data)
+                await self.__request_playbacks()
                 
-                if data.get("session"):
-                    self.session_id = data.get("session")
-                
-                if data.get("forceLogin") == True:
-                    await self.__login()
-                
-                if data.get("status") and data.get("appType"):
-                    await self.send({"session": 0})
-
-        except Exception as e:
-            print(f"Error in process_messages: {e}")
-        finally:
-            self.connected = False
+            if data.get("session"):
+                self.session_id = data.get("session")
+            
+            if data.get("forceLogin"):
+                await self.__login()
+            
+            if data.get("status") and data.get("appType"):
+                await self.__send({"session": 0})
+        self.disconnect()
 
 
     async def __process_playback(self, data):
@@ -191,12 +195,10 @@ class Dot2Controller:
             return changed
         
         def get_fader_position(item):
-            position = 0
             for block in item.get("executorBlocks", []):
                 if "fader" in block:
-                    position = block["fader"].get("v", 0)
-                    break
-            return position
+                    return block["fader"].get("v", 0)
+            return 0
 
         for executor_type, executor in extract_executors(data["itemGroups"]):
             if executor_type == ExecutorType.FADER: 
@@ -210,13 +212,14 @@ class Dot2Controller:
                         listener(executor["id"] + 1, executor["is_active"])
         
 
-    async def send(self, payload: Dict[str, Any]):
+    async def __send(self, payload: Dict[str, Any]):
         try:
             if not self.ws:
                 raise RuntimeError("WebSocket connection not established")
             await self.ws.send_str(json.dumps(payload, separators=(',', ':')))
         except Exception as e:
             print(f"Send error: {e}")
+            raise e
 
 
     async def __request_playbacks(self):
@@ -234,10 +237,10 @@ class Dot2Controller:
             "session": self.session_id,
             "maxRequests": 1
         }
-        await self.send(payload)
+        await self.__send(payload)
 
     async def send_command(self, command: str):
-        await self.send({
+        await self.__send({
             "requestType": "command",
             "command": command,
             "session": self.session_id
