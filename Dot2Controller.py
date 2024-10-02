@@ -251,7 +251,7 @@ class Dot2Controller:
     # raises ConnectionAbortedError
     async def set_button(self, executor_number: int, is_active: bool):
         if executor_number < 1: raise ValueError("Executor must be positive")
-        command = f"Executor {executor_number} At {100 if is_active else 0}"
+        command = f"{"On" if is_active else "Off"} Executor {executor_number}"
         await self.send_command(command)
 
 
